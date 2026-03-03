@@ -1,5 +1,5 @@
-if data(2) == "TRUE" {
-    data(3)
+if data(1) == "TRUE" {
+    data(2)
 } else {
     ()
 }

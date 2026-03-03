@@ -5,15 +5,15 @@ use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 use uuid::Uuid;
 
-const MOJANG_API_URL :&str = "https://api.mojang.com/profiles/minecraft";
+const MOJANG_API_URL: &str = "https://api.mojang.com/profiles/minecraft";
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct WhitelistEntry {
     name: String,
+    #[serde(skip_serializing)]
+    id: String,
     #[serde(skip_deserializing)]
     uuid: String,
-    #[serde(skip_serializing)]
-    id: String
 }
 
 pub type WhitelistEntries = Vec<WhitelistEntry>;
@@ -24,21 +24,21 @@ pub struct Task<'a> {
 }
 
 pub struct Mojang<'a> {
-    client :Client,
+    client: Client,
     queue: VecDeque<Task<'a>>,
-    max_retry: usize, 
+    max_retry: usize,
 }
 
 impl<'a> Mojang<'a> {
-    pub fn new(max_retry :usize) -> Self {
+    pub fn new(max_retry: usize) -> Self {
         Self {
             client: Client::new(),
             queue: VecDeque::new(),
-            max_retry
+            max_retry,
         }
     }
 
-    pub fn add(&mut self, entries :&'a Vec<String>) {
+    pub fn add(&mut self, entries: &'a [String]) {
         let chunks = entries.chunks(10);
         for chunk in chunks {
             let task = Task::new(chunk);
@@ -47,61 +47,61 @@ impl<'a> Mojang<'a> {
     }
 
     pub async fn start_query(&mut self) -> WhitelistEntries {
-        let mut completed :WhitelistEntries= Vec::with_capacity(self.queue.len());
-
+        let mut completed: WhitelistEntries = Vec::with_capacity(self.queue.len());
         while let Some(mut task) = self.queue.pop_front() {
             println!("fetching: {:?}", task.entries);
-            let res = self.client.post(MOJANG_API_URL)
+            let res = self
+                .client
+                .post(MOJANG_API_URL)
                 .json(&task.entries)
                 .send()
                 .await;
             if let Ok(res) = res {
+                if res.status() != 200 && task.retry_count < self.max_retry {
+                    task.retry_count += 1;
+                    println!(
+                        "rate_limited. retry {}/{}",
+                        task.retry_count, self.max_retry
+                    );
+
+                    self.queue.push_back(task);
+                    continue;
+                }
+
                 match res.json::<WhitelistEntries>().await {
                     Ok(mut entries) => {
-                        println!("complete: {:?}", entries);
+                        println!("fetched: {} users", entries.len());
                         completed.append(&mut entries)
-                    },
-                    Err(_) => continue
-                }
-            } else {
-                if task.retry_count <= self.max_retry {
-                    println!("response error. retry {}/{}", task.retry_count, self.max_retry);
-                    task.retry_count += 1;
-                    self.queue.push_back(task);
+                    }
+                    Err(_) => continue,
                 }
             }
 
             sleep(Duration::from_secs(1)).await;
         }
 
-        let completed = completed.iter()
-            .filter(|e| e.copy_uuid())
-            .collect();
-
+        completed.retain_mut(WhitelistEntry::check_and_set);
         completed
-
     }
-
-
 }
 
 impl<'a> Task<'a> {
-    pub fn new(entries :&'a [String]) -> Self {
-        Self { 
-            entries, 
-            retry_count: 0
+    pub fn new(entries: &'a [String]) -> Self {
+        Self {
+            entries,
+            retry_count: 0,
         }
     }
 }
 
 impl WhitelistEntry {
-    pub fn copy_uuid(mut self) -> bool {
+    pub fn check_and_set(&mut self) -> bool {
         match Uuid::parse_str(&self.id) {
-            Ok(uuid) => {           
-                self.uuid = uuid.to_string();         
+            Ok(uuid) => {
+                self.uuid = uuid.to_string();
                 true
-            },
-            Err(_) => false
+            }
+            Err(_) => false,
         }
     }
 }

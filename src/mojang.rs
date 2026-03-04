@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 use uuid::Uuid;
 
-const MOJANG_API_URL: &str = "https://api.mojang.com/profiles/minecraft";
+const CHUNK_SIZE :usize = 10;
+const MOJANG_API_URL :&str = "https://api.mojang.com/profiles/minecraft";
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct WhitelistEntry {
@@ -39,7 +40,7 @@ impl<'a> Mojang<'a> {
     }
 
     pub fn add(&mut self, entries: &'a [String]) {
-        let chunks = entries.chunks(10);
+        let chunks = entries.chunks(CHUNK_SIZE);
         for chunk in chunks {
             let task = Task::new(chunk);
             self.queue.push_back(task);
@@ -47,7 +48,7 @@ impl<'a> Mojang<'a> {
     }
 
     pub async fn start_query(&mut self) -> WhitelistEntries {
-        let mut completed: WhitelistEntries = Vec::with_capacity(self.queue.len());
+        let mut completed: WhitelistEntries = Vec::with_capacity(self.queue.len().saturating_mul(CHUNK_SIZE));
         while let Some(mut task) = self.queue.pop_front() {
             println!("fetching: {:?}", task.entries);
             let res = self

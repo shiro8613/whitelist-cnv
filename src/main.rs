@@ -8,6 +8,9 @@ mod mojang;
 mod options;
 mod script;
 
+const MAX_RETRY :usize = 3;
+const USERNAME_FILTER :fn(&String) -> bool = |s| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+
 #[tokio::main]
 async fn main() {
     let args = Options::parse();
@@ -30,11 +33,11 @@ async fn main() {
         }
     }
 
-    entries.retain(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'));
+    entries.retain(USERNAME_FILTER);
 
     println!("loaded users: {}", entries.len());
 
-    let mut api_service = Mojang::new(3);
+    let mut api_service = Mojang::new(MAX_RETRY);
     api_service.add(&entries);
 
     let whitelist = api_service.start_query().await;

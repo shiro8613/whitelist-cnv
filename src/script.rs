@@ -18,7 +18,8 @@ impl ScriptEngine {
 
     pub fn run_filter(&mut self, data: StringRecord) -> Option<String> {
         let tmp_engine = self.engine.register_fn("data", move |idx: i64| -> String {
-            let d = data.get(idx as usize);
+            let inp :Option<usize> = idx.try_into().ok();
+            let d = inp.and_then(|i| data.get(i));
             d.map(|s| s.to_string()).unwrap_or_default()
         });
 
